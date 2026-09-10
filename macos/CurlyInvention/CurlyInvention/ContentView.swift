@@ -1,0 +1,24 @@
+//
+//  ContentView.swift
+//  CurlyInvention
+//
+//  Created by KN on R 8/09/10.
+//
+
+import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        VStack {
+            Image(systemName: "globe")
+                .imageScale(.large)
+                .foregroundStyle(.tint)
+            Text("Hello, world!")
+        }
+        .padding()
+    }
+}
+
+#Preview {
+    ContentView()
+}
