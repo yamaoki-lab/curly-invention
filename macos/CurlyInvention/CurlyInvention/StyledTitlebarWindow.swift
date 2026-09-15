@@ -50,22 +50,161 @@ enum StyledTitlebar {
 }
 
 /// 標準の密度のウインドウ.
-final class StyledTitlebarWindow: NSWindow {
+/// 折りたたみの処理は CollapsibleTitlebarWindow に共通で持ち, ここでは AppKit の入口から渡すだけにする.
+final class StyledTitlebarWindow: NSWindow, CollapsibleTitlebarWindow {
     let titlebarStyle: TitlebarStyle
+    let collapseState = TitlebarCollapseState()
 
     init(titlebarStyle: TitlebarStyle) {
         self.titlebarStyle = titlebarStyle
         super.init(contentRect: .zero, styleMask: titlebarStyle.styleMask, backing: .buffered, defer: false)
     }
+
+    override func miniaturize(_ sender: Any?) { toggleCollapsed() }
+    override func performMiniaturize(_ sender: Any?) { toggleCollapsed() }
+
+    override func sendEvent(_ event: NSEvent) {
+        if handleTitlebarDoubleClick(event) { return }
+        super.sendEvent(event)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        validateCollapseMenuItem(menuItem) ?? super.validateMenuItem(menuItem)
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        resetMiniaturizeMenuItemTitle()
+    }
 }
 
 /// コンパクトの密度のパネル.
-final class StyledTitlebarPanel: NSPanel {
+/// 折りたたみの処理は CollapsibleTitlebarWindow に共通で持ち, ここでは AppKit の入口から渡すだけにする.
+final class StyledTitlebarPanel: NSPanel, CollapsibleTitlebarWindow {
     let titlebarStyle: TitlebarStyle
+    let collapseState = TitlebarCollapseState()
 
     init(titlebarStyle: TitlebarStyle) {
         self.titlebarStyle = titlebarStyle
         super.init(contentRect: .zero, styleMask: titlebarStyle.styleMask, backing: .buffered, defer: false)
+    }
+
+    override func miniaturize(_ sender: Any?) { toggleCollapsed() }
+    override func performMiniaturize(_ sender: Any?) { toggleCollapsed() }
+
+    override func sendEvent(_ event: NSEvent) {
+        if handleTitlebarDoubleClick(event) { return }
+        super.sendEvent(event)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        validateCollapseMenuItem(menuItem) ?? super.validateMenuItem(menuItem)
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        resetMiniaturizeMenuItemTitle()
+    }
+}
+
+/// 折りたたみの状態. ウインドウとパネルで同じ処理を使うため, 状態だけを別の入れ物に持つ.
+final class TitlebarCollapseState {
+    fileprivate var isCollapsed = false
+    fileprivate var expandedHeight: CGFloat = 0
+    /// 折りたたみ中は位置の記憶を止めるので, その間の名前を預かる.
+    fileprivate var suspendedFrameAutosaveName = ""
+    /// 中身の SwiftUI の大きさをウインドウに伝える設定を切り替える. 作る時に設定する.
+    fileprivate var setHostingSizingOptions: (NSHostingSizingOptions) -> Void = { _ in }
+    fileprivate var expandedContentMinSize: NSSize = .zero
+    fileprivate var expandedContentMaxSize: NSSize = .zero
+    /// 文言を書き換えたウインドウメニューの "しまう" の項目.
+    fileprivate weak var miniaturizeMenuItem: NSMenuItem?
+}
+
+/// Stickies のように, しまう操作をタイトルバーだけの高さへの折りたたみに置き換える.
+///
+/// しまう操作の行き先 (miniaturize と performMiniaturize) を差し替えるので, 右上の黄のボタン, ⌘M, ウインドウメニュー,
+/// アクセシビリティの操作のどこから呼ばれても折りたたむ. タイトルバーのダブルクリックは, システム設定に関係なく常に折りたたむ.
+protocol CollapsibleTitlebarWindow: NSWindow {
+    var collapseState: TitlebarCollapseState { get }
+}
+
+extension CollapsibleTitlebarWindow {
+    /// タイトルバーだけの高さに折りたたむ, または元の高さに開く. 上端の位置は保つ.
+    func toggleCollapsed() {
+        guard let contentView else { return }
+        let state = collapseState
+
+        if state.isCollapsed {
+            var expandedFrame = frame
+            expandedFrame.size.height = state.expandedHeight
+            expandedFrame.origin.y = frame.maxY - state.expandedHeight
+            contentView.isHidden = false
+            setFrame(expandedFrame, display: true, animate: true)
+            contentMinSize = state.expandedContentMinSize
+            contentMaxSize = state.expandedContentMaxSize
+            state.setHostingSizingOptions(.standardBounds)
+            if !state.suspendedFrameAutosaveName.isEmpty {
+                // setFrameAutosaveName は保存済みの位置へウインドウを戻すので, 先に今の位置 (折りたたみ中に動かした先) を保存しておく.
+                saveFrame(usingName: state.suspendedFrameAutosaveName)
+                setFrameAutosaveName(state.suspendedFrameAutosaveName)
+                state.suspendedFrameAutosaveName = ""
+            }
+            state.isCollapsed = false
+        } else {
+            state.expandedHeight = frame.height
+            state.expandedContentMinSize = contentMinSize
+            state.expandedContentMaxSize = contentMaxSize
+            // 縮んだ大きさを次の起動に持ち越さないよう, 折りたたみ中は位置の記憶を止める.
+            if !frameAutosaveName.isEmpty {
+                saveFrame(usingName: frameAutosaveName)
+                state.suspendedFrameAutosaveName = frameAutosaveName
+                setFrameAutosaveName("")
+            }
+            // 中身の自然な大きさがウインドウの最小の大きさになっているので, その伝達を外してから縮める.
+            state.setHostingSizingOptions([])
+            contentMinSize = .zero
+
+            // タイトルバーの高さは, 同じ様式の純正のタイトルバーの高さを AppKit に計算させる.
+            let titlebarHeight = NSWindow.frameRect(forContentRect: .zero, styleMask: styleMask).height
+            var collapsedFrame = frame
+            collapsedFrame.size.height = titlebarHeight
+            collapsedFrame.origin.y = frame.maxY - titlebarHeight
+            setFrame(collapsedFrame, display: true, animate: true)
+            contentView.isHidden = true
+            state.isCollapsed = true
+        }
+    }
+
+    /// タイトルバーの範囲でのダブルクリックを拾って折りたたむ. 拾った時は true を返し, AppKit には渡さない. 信号機の上は除く.
+    ///
+    /// 2回目の押下で折りたたみ, 2回目の離しも AppKit に渡さない. AppKit はシステム設定 (しまう, 画面全体に表示など) の
+    /// 動作を, 押下と離しのどちらかで行うので, 両方を止めないと折りたたみと一緒に動いてしまう.
+    func handleTitlebarDoubleClick(_ event: NSEvent) -> Bool {
+        guard event.type == .leftMouseDown || event.type == .leftMouseUp, event.clickCount == 2 else { return false }
+        guard event.locationInWindow.y >= contentLayoutRect.maxY else { return false }
+        if let hitView = contentView?.superview?.hitTest(event.locationInWindow), hitView is NSButton {
+            return false
+        }
+        if event.type == .leftMouseDown {
+            toggleCollapsed()
+        }
+        return true
+    }
+
+    /// ウインドウメニューの "しまう" を, 折りたたみの文言にする. 他のメニュー項目なら nil を返し, 判定を AppKit に任せる.
+    /// このアプリのウインドウは全て折りたたむので, 文言は "折りたたむ" を基本にし, 折りたたみ中だけ "開く" にする.
+    func validateCollapseMenuItem(_ menuItem: NSMenuItem) -> Bool? {
+        guard menuItem.action == #selector(NSWindow.performMiniaturize(_:)) else { return nil }
+        collapseState.miniaturizeMenuItem = menuItem
+        menuItem.title = collapseState.isCollapsed ? String(localized: "Expand") : String(localized: "Collapse")
+        return true
+    }
+
+    /// キーから外れた時に, 文言を "折りたたむ" に戻す. 設定ウインドウ (SwiftUI の Settings シーン) は
+    /// このクラスではなく文言を書き換えないので, 折りたたみ中の "開く" が残らないようにする.
+    func resetMiniaturizeMenuItemTitle() {
+        collapseState.miniaturizeMenuItem?.title = String(localized: "Collapse")
     }
 }
 
@@ -79,6 +218,9 @@ private extension NSWindow {
         let hostingView = NSHostingView(rootView: content)
         contentView = hostingView
         setContentSize(hostingView.fittingSize)
+        (self as? CollapsibleTitlebarWindow)?.collapseState.setHostingSizingOptions = { [weak hostingView] options in
+            hostingView?.sizingOptions = options
+        }
 
         if let frameAutosaveName {
             if !setFrameUsingName(frameAutosaveName) {
