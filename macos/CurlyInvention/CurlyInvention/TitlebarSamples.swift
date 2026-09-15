@@ -46,15 +46,33 @@ private struct TitlebarSampleView: View {
     let number: Int
     let style: TitlebarStyle
 
+    @State private var pressCount = 0
+
     var body: some View {
-        Form {
-            row("Sample", "\(number)")
-            row("Orientation", "\(style.orientation)")
-            row("Density", "\(style.density)")
-            row("Content", "http://127.0.0.1:3579/")
+        VStack(spacing: 0) {
+            // 縦向きの確認用: 見えないタイトルバーの範囲 (上端) に, 押せる部品と選択できるテキストを置く.
+            if number == 3 {
+                HStack {
+                    Button {
+                        pressCount += 1
+                    } label: {
+                        Text(verbatim: "Pressed \(pressCount)")
+                    }
+                    Text(verbatim: "selectable text")
+                        .textSelection(.enabled)
+                    Spacer()
+                }
+                .padding(.horizontal)
+            }
+            Form {
+                row("Sample", "\(number)")
+                row("Orientation", "\(style.orientation)")
+                row("Density", "\(style.density)")
+                row("Content", "http://127.0.0.1:3579/")
+            }
+            .formStyle(.grouped)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .formStyle(.grouped)
-        .scrollBounceBehavior(.basedOnSize)
         .fixedSize()
     }
 
