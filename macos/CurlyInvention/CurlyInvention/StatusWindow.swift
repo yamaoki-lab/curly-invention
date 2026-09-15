@@ -13,7 +13,7 @@ enum StatusWindow {
         StyledTitlebar.makeWindow(
             title: String(localized: "Status"),
             frameAutosaveName: "StatusWindow",
-            style: TitlebarStyle(orientation: .horizontal, density: .standard)
+            style: TitlebarStyle(density: .standard)
         ) {
             ContentView(model: model)
         }

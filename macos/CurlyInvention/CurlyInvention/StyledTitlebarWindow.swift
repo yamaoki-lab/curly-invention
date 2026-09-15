@@ -6,15 +6,9 @@
 import AppKit
 import SwiftUI
 
-/// タイトルバーの様式. console/ のウインドウの `titleBarOrientation` と `titleBarDensity` に揃えた2つの軸.
+/// タイトルバーの様式. console/ のウインドウの `titleBarDensity` に揃えた軸.
+/// console/ の `titleBarOrientation` (縦向き) は未実装で, 追って足す.
 struct TitlebarStyle: Equatable {
-    enum Orientation {
-        /// 上端に横向きのタイトルバー.
-        case horizontal
-        /// 左端に縦向きのタイトルバー.
-        case vertical
-    }
-
     enum Density {
         /// 普通のウインドウの大きさのタイトルバー.
         case standard
@@ -22,7 +16,6 @@ struct TitlebarStyle: Equatable {
         case compact
     }
 
-    var orientation: Orientation = .horizontal
     var density: Density = .standard
 
     fileprivate var styleMask: NSWindow.StyleMask {
@@ -31,17 +24,7 @@ struct TitlebarStyle: Equatable {
             // 小さなタイトルバーと信号機は NSPanel でしか使えない.
             mask.insert(.utilityWindow)
         }
-        if orientation == .vertical {
-            // 純正のタイトルバーを透明にし, 中身をその下まで広げる.
-            mask.insert(.fullSizeContentView)
-        }
         return mask
-    }
-
-    /// タイトルバーの厚み. 同じ密度の純正のタイトルバーの高さを AppKit に計算させる.
-    fileprivate var titlebarThickness: CGFloat {
-        let mask = styleMask.subtracting(.fullSizeContentView)
-        return NSWindow.frameRect(forContentRect: .zero, styleMask: mask).height
     }
 }
 
@@ -49,7 +32,6 @@ struct TitlebarStyle: Equatable {
 ///
 /// 標準の密度は普通のウインドウ (NSWindow), コンパクトはパネル (NSPanel) にする. パネルの振る舞い
 /// (手前に浮く, アプリを切り替えると隠れる, など) は変えず, 信号機の並びだけを組み直す.
-/// 縦向きは確認の段で, 左端に仮の帯を置くだけ (信号機と題名はまだ無い).
 enum StyledTitlebar {
     /// - Parameter frameAutosaveName: 位置を記憶する名前. nil なら記憶せず, 画面の中央に置く.
     static func makeWindow<Content: View>(
@@ -62,7 +44,7 @@ enum StyledTitlebar {
         case .standard: StyledTitlebarWindow(titlebarStyle: style)
         case .compact: StyledTitlebarPanel(titlebarStyle: style)
         }
-        window.setUpStyledTitlebar(title: title, frameAutosaveName: frameAutosaveName, style: style, content: content())
+        window.setUpStyledTitlebar(title: title, frameAutosaveName: frameAutosaveName, content: content())
         return window
     }
 }
@@ -88,29 +70,15 @@ final class StyledTitlebarPanel: NSPanel {
 }
 
 private extension NSWindow {
-    func setUpStyledTitlebar<Content: View>(
-        title: String,
-        frameAutosaveName: String?,
-        style: TitlebarStyle,
-        content: Content
-    ) {
+    func setUpStyledTitlebar<Content: View>(title: String, frameAutosaveName: String?, content: Content) {
         self.title = title
         // 閉じても捨てず, ウインドウメニューや Dock から開き直せるようにする.
         isReleasedWhenClosed = false
 
-        // NSHostingView は SwiftUI の自然な大きさを持つので, ウインドウの大きさはそこから決める.
+        // NSHostingView は SwiftUI の自然な大きさを, ウインドウの最小と最大の大きさとして伝える.
         let hostingView = NSHostingView(rootView: content)
-        switch style.orientation {
-        case .horizontal:
-            contentView = hostingView
-        case .vertical:
-            // 中身はタイトルバーの下まで広がるので, SwiftUI にタイトルバーの分の余白を取らせない.
-            hostingView.safeAreaRegions = []
-            contentView = makeVerticalTitlebarContainer(hostingView: hostingView, thickness: style.titlebarThickness)
-        }
-        if let contentView {
-            setContentSize(contentView.fittingSize)
-        }
+        contentView = hostingView
+        setContentSize(hostingView.fittingSize)
 
         if let frameAutosaveName {
             if !setFrameUsingName(frameAutosaveName) {
@@ -121,41 +89,7 @@ private extension NSWindow {
             center()
         }
 
-        switch style.orientation {
-        case .horizontal:
-            arrangeWindowButtons()
-        case .vertical:
-            break
-        }
-    }
-
-    /// 縦向き: 純正のタイトルバーを見えなくし, 左端の帯と SwiftUI の中身を横に並べた入れ物を作る.
-    func makeVerticalTitlebarContainer(hostingView: NSView, thickness: CGFloat) -> NSView {
-        titlebarAppearsTransparent = true
-        titleVisibility = .hidden
-        for buttonType: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
-            standardWindowButton(buttonType)?.isHidden = true
-        }
-        // 透明にしても, AppKit はタイトルバーの範囲 (上端) を覚えていて, その範囲の何も無い所を掴むとウインドウが動く.
-        // ボタンや選択できるテキストのような部品は移動を許さないと答えるので, 部品の操作は奪われない. 何も無い所で動くのは受け入れる.
-        // isMovable = false で止めると, ウインドウメニューの移動の項目まで無効になるので使わない.
-        let titlebar = VerticalTitlebarView()
-        let container = NSView()
-        for view in [titlebar, hostingView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(view)
-        }
-        NSLayoutConstraint.activate([
-            titlebar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            titlebar.topAnchor.constraint(equalTo: container.topAnchor),
-            titlebar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            titlebar.widthAnchor.constraint(equalToConstant: thickness),
-            hostingView.leadingAnchor.constraint(equalTo: titlebar.trailingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: container.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        return container
+        arrangeWindowButtons()
     }
 
     /// 信号機を Stickies のように並べ替える. 閉じるボタンは左上に残し, 拡大としまうボタンを右上に置く.
@@ -202,23 +136,6 @@ private extension NSWindow {
         accessory.layoutAttribute = .trailing
         accessory.view = group
         addTitlebarAccessoryViewController(accessory)
-    }
-}
-
-/// 縦向きのタイトルバーの帯. 今は確認用の仮の見た目で, ドラッグでウインドウを動かせるだけ.
-private final class VerticalTitlebarView: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.systemOrange.withAlphaComponent(0.4).setFill()
-        NSBezierPath(rect: bounds).fill()
-    }
-
-    /// 純正のタイトルバーと同じく, アクティブでないウインドウでも最初のクリックからドラッグを受け付ける.
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
     }
 }
 
