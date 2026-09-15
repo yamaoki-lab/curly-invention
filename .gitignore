@@ -63,3 +63,4 @@ fastlane/test_output
 
 # 書き出したビルド成果物の置き場 (macos/build/, windows/build/)
 build/
+.DS_Store
