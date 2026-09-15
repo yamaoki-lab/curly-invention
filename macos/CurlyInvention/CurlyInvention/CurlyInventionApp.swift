@@ -24,11 +24,27 @@ struct CurlyInventionApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
-    private var statusWindow: StatusWindow?
+    private var statusWindow: NSWindow?
+    #if DEBUG
+    private var titlebarSampleWindows: [NSWindow] = []
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         showStatusWindow()
+        #if DEBUG
+        showTitlebarSampleWindows()
+        #endif
     }
+
+    #if DEBUG
+    /// 開発用: タイトルバーの様式の見本を, 状況のウインドウの下に並べて開く.
+    private func showTitlebarSampleWindows() {
+        guard let statusWindow else { return }
+        titlebarSampleWindows = TitlebarSamples.makeWindows(below: statusWindow)
+        titlebarSampleWindows.forEach { $0.orderFront(nil) }
+        statusWindow.makeKeyAndOrderFront(nil)
+    }
+    #endif
 
     /// 主ウインドウを閉じてもアプリは終えない. 開き直すのはウインドウメニューか Dock から.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -44,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showStatusWindow() {
-        let window = statusWindow ?? StatusWindow(model: model)
+        let window = statusWindow ?? StatusWindow.make(model: model)
         statusWindow = window
         window.makeKeyAndOrderFront(nil)
     }
