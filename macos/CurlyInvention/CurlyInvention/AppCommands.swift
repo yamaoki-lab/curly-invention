@@ -7,13 +7,13 @@ import SwiftUI
 
 struct AppCommands: Commands {
     @Bindable var model: AppModel
-    @Environment(\.openWindow) private var openWindow
+    let showStatusWindow: () -> Void
 
     var body: some Commands {
         // 主ウインドウは閉じてもアプリが終わらないので, 開き直す項目を置く (メールの "メッセージビューア" と同じ).
         CommandGroup(after: .singleWindowList) {
             Button("Status") {
-                openWindow(id: "main")
+                showStatusWindow()
             }
             .keyboardShortcut("0")
         }
