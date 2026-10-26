@@ -1,0 +1,52 @@
+# PR の macOS 版クライアントを, ビルドと単体テストで確かめる.
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# 同じ PR に続けて push したら, 古い方の実行は止める.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # PR の画面と Ruleset に出る確認の名前. 対象を増やしても名前が崩れない形にする.
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest は macOS 26 (arm64), 既定の Xcode は 26.6. 配備対象は 15.6 なので足りる.
+        # バージョンを固定したくなった時は, ここを macos-26 のように具体的な名前にする.
+        os: [macos-latest]
+    runs-on: ${{ matrix.os }}
+    # 止まらなくなった時に, 既定の6時間まで走らせ続けないようにする.
+    timeout-minutes: 30
+    env:
+      PROJECT: macos/CurlyInvention/CurlyInvention.xcodeproj
+      SCHEME: CurlyInvention
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # 何で作ったかを後から追えるようにする.
+      - name: Xcode のバージョン
+        run: xcodebuild -version # yamaoki-lint:ignore
+
+      # UI テストは回さない. 画面を乗っ取り, システムの外観まで切り替えるため.
+      - name: 単体テスト
+        run: |
+          xcodebuild test \
+            -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination 'platform=macOS' \
+            -only-testing:CurlyInventionTests
+
+      # 配布するのは Release なので, 最適化した方も通ることを見ておく.
+      # 署名はアドホック (CODE_SIGN_STYLE = Automatic で開発チームの指定が無い) なので, 証明書は要らない.
+      - name: Release のビルド
+        run: |
+          xcodebuild build \
+            -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Release -destination 'generic/platform=macOS'
