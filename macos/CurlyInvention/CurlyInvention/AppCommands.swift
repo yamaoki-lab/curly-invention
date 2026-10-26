@@ -8,6 +8,9 @@ import SwiftUI
 struct AppCommands: Commands {
     @Bindable var model: AppModel
     let showStatusWindow: () -> Void
+    let openLocation: () -> Void
+    let openFile: () -> Void
+    let reloadWebPage: () -> Void
 
     var body: some Commands {
         // 主ウインドウは閉じてもアプリが終わらないので, 開き直す項目を置く (メールの "メッセージビューア" と同じ).
@@ -69,6 +72,30 @@ struct AppCommands: Commands {
 
             SettingsLink {
                 Text("Runtime Settings…")
+            }
+        }
+
+        // 設定の デベロッパ用の機能を表示 が入の時だけ出す.
+        // 開発中かどうかでアプリの動きを変えるのではなく, このメニューを出すかどうかの設定.
+        if model.showsDeveloperFeatures {
+            CommandMenu("Develop") {
+                Button("Open Location…") {
+                    openLocation()
+                }
+                .keyboardShortcut("l", modifiers: [.option, .command])
+
+                Button("Open File…") {
+                    openFile()
+                }
+                .keyboardShortcut("o", modifiers: [.option, .command])
+
+                Divider()
+
+                Button("Reload Page") {
+                    reloadWebPage()
+                }
+                .keyboardShortcut("r")
+                .disabled(!model.hasWebPages)
             }
         }
     }

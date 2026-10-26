@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    let model: AppModel
+    @Bindable var model: AppModel
 
     var body: some View {
         TabView {
@@ -23,6 +23,15 @@ struct SettingsView: View {
                 }
                 .formStyle(.grouped)
                 .scrollBounceBehavior(.basedOnSize)
+                .fixedSize()
+            }
+
+            Tab("Advanced", systemImage: "gearshape") {
+                Form {
+                    // 開発中かどうかでアプリの動きを変えるのではなく, 開発 のメニューを出すかどうかの設定.
+                    Toggle("Show features for developers", isOn: $model.showsDeveloperFeatures)
+                }
+                .formStyle(.grouped)
                 .fixedSize()
             }
         }

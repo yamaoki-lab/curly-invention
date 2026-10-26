@@ -36,11 +36,31 @@ final class AppModel {
     var storageUsedBytes: Int64?
     private(set) var browsers: [BrowserApplication] = []
 
+    /// 開発 のメニューを出すかどうか. 開発中かどうかでアプリの動きを変えるスイッチではなく, メニューを出すかの設定.
+    var showsDeveloperFeatures: Bool {
+        didSet { UserDefaults.standard.set(showsDeveloperFeatures, forKey: Self.showsDeveloperFeaturesKey) }
+    }
+
+    /// 場所を開く… で最近開いた URL. 新しい順.
+    private(set) var recentLocations: [String]
+
+    /// Web のウインドウが1枚でも開いているか. メニューの項目を使えるかの判断に使う.
+    var hasWebPages = false
+
+    private static let showsDeveloperFeaturesKey = "ShowsDeveloperFeatures"
+    private static let recentLocationsKey = "RecentLocations"
+    /// 覚えておく数. 多すぎると選ぶのが面倒になる.
+    private static let recentLocationsLimit = 10
+
     var selectedRuntime: RuntimeInfo? {
         runtimes.first { $0.id == selectedRuntimeID }
     }
 
     init() {
+        // 既定は切. 無い時に bool が false を返すのに任せる.
+        showsDeveloperFeatures = UserDefaults.standard.bool(forKey: Self.showsDeveloperFeaturesKey)
+        recentLocations = UserDefaults.standard.stringArray(forKey: Self.recentLocationsKey) ?? []
+
         // 仮の値. ランタイムの取得を実装したら置き換える.
         runtimes = [
             RuntimeInfo(id: "example.remote", name: "Example (Remote)", version: "0.0.0", summary: "", serverAddress: "example.local:3579"),
@@ -67,6 +87,14 @@ final class AppModel {
         pasteboard.clearContents()
         pasteboard.setString(consoleURL.absoluteString, forType: .URL)
         pasteboard.setString(consoleURL.absoluteString, forType: .string)
+    }
+
+    /// 開いた URL を最近のものとして覚える. 同じものは一番上に動かす.
+    func rememberLocation(_ url: URL) {
+        var updated = recentLocations.filter { $0 != url.absoluteString }
+        updated.insert(url.absoluteString, at: 0)
+        recentLocations = Array(updated.prefix(Self.recentLocationsLimit))
+        UserDefaults.standard.set(recentLocations, forKey: Self.recentLocationsKey)
     }
 
     func revealStorageFolder() {
